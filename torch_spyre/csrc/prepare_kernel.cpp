@@ -459,6 +459,33 @@ std::unique_ptr<JobPlanStep> JobPlanBuilder::translateCommand(
   return nullptr;
 }
 
+std::vector<std::vector<int64_t>> JobPlanBuilder::translateExpectedInputShapes() const {
+  if (!spyrecode_json_.contains("ExpectedInputShapes")) {
+    return {};
+  }
+
+  const auto& shapes_json = spyrecode_json_["ExpectedInputShapes"];
+  TORCH_CHECK(shapes_json.is_array(), "SpyreCode ExpectedInputShapes must be a JSON array");
+
+  std::vector<std::vector<int64_t>> shapes;
+  shapes.reserve(shapes_json.size());
+
+  for (size_t i = 0; i < shapes_json.size(); ++i) {
+    const auto& shape_json = shapes_json[i];
+    TORCH_CHECK(shape_json.is_array(), "SpyreCode ExpectedInputShapes[", i, "] must be a JSON array");
+
+    std::vector<int64_t> shape;
+    shape.reserve(shape_json.size());
+
+    for (size_t d = 0; d < shape_json.size(); ++d) {
+      TORCH_CHECK(shape_json[d].is_number_integer(), "SpyreCode ExpectedInputShapes[", i, "][", d, "] must be an integer");
+      shape.push_back(shape_json[d].get<int64_t>());
+    }
+    shapes.push_back(std::move(shape));
+  }
+  return shapes;
+}
+
 std::unique_ptr<JobPlan> JobPlanBuilder::translateJobExecPlan() {
   auto job_exec_plan = spyrecode_json_["JobExecPlan"];
   TORCH_CHECK(job_exec_plan.is_array(), "JobExecPlan must be an array");
@@ -491,11 +518,11 @@ std::unique_ptr<JobPlan> JobPlanBuilder::translateJobExecPlan() {
   // Create and return the JobPlan
   // Use brace initialization to construct JobPlan with moved members
   return std::make_unique<JobPlan>(
-      JobPlan{std::move(steps),            // steps
-              std::move(job_allocation_),  // job_allocation
-              {},                          // expected_input_shapes
-              std::move(pinned_buffers),   // pinned_buffers
-              std::move(inits_)});
+    JobPlan{std::move(steps),                    // steps
+            std::move(job_allocation_),          // job_allocation
+            translateExpectedInputShapes(),       // expected_input_shapes
+            std::move(pinned_buffers),           // pinned_buffers
+            std::move(inits_)});                 // inits_ (new from main)
 }
 
 JobPlanBuilder::ValidationResult JobPlanBuilder::validate(
